@@ -1,0 +1,43 @@
+# docker compose up gemelo-sim   -> demo SIN hardware (graba salida/gemelo_sim.gif)
+# docker compose up gemelo       -> con las 4 ESP32 reales (PC conectado al WiFi ENJAMBRE_ACO)
+# docker compose --profile gui up gemelo-gui   -> ventana 3D (Linux con X11)
+
+x-base: &base
+  build:
+    context: .
+    dockerfile: gemelo_pybullet/Dockerfile
+  image: enjambre-aco-gemelo
+  volumes:
+    - ./salida:/app/salida
+
+services:
+  gemelo-sim:
+    <<: *base
+    environment:
+      SIM: "1"
+      MODO: direct
+      GRABAR: /app/salida/gemelo_sim.gif
+      SALIR_AL_TERMINAR: "1"
+
+  gemelo:
+    <<: *base
+    ports:
+      - "5010:5010/udp"
+    environment:
+      HUB_IP: 192.168.4.1
+      MODO: direct
+      GRABAR: /app/salida/gemelo_real.gif
+      SALIR_AL_TERMINAR: "1"
+
+  gemelo-gui:
+    <<: *base
+    profiles: ["gui"]
+    network_mode: host
+    environment:
+      DISPLAY: ${DISPLAY}
+      HUB_IP: ${HUB_IP:-192.168.4.1}
+      SIM: ${SIM:-0}
+      MODO: gui
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix
+      - ./salida:/app/salida

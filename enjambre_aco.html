@@ -1,0 +1,370 @@
+<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><style>body{margin:0}[hidden]{display:none!important}</style>
+<title>Enjambre ACO ESP32</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: consola de laboratorio — gemelo digital (laberinto) a la izquierda, red + nodos a la derecha, telemetría abajo */
+:root{
+  --bg:#ecefea; --panel:#fbfcfa; --ink:#18231e; --muted:#5b6a62; --line:#cdd6cf;
+  --floor:#f3f5f1; --wall:#2c3b47; --grid:#e1e6e0;
+  --accent:#d98300; --fer-hot:#b5341b; --hub:#5a4fcf; --pc:#4b5a63;
+  --c1:#d23b2f; --c2:#2c6bd3; --c3:#1c9550;
+  --ok:#1c9550; --warn:#c77700; --bad:#c23a2b;
+  --f-disp:"Chakra Petch", "Segoe UI", system-ui, sans-serif;
+  --f-body:"IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --f-mono:"IBM Plex Mono", ui-monospace, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0e1412; --panel:#151d1a; --ink:#e3ebe6; --muted:#90a097; --line:#2a3732;
+  --floor:#1a2420; --wall:#5d7383; --grid:#22302a;
+  --accent:#ffad2a; --fer-hot:#ff5b38; --hub:#9a90ff; --pc:#9fb0ba;
+  --c1:#ff6a5c; --c2:#5d9bff; --c3:#3fd17f; --ok:#3fd17f; --warn:#ffad2a; --bad:#ff6a5c;
+  color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0e1412; --panel:#151d1a; --ink:#e3ebe6; --muted:#90a097; --line:#2a3732;
+  --floor:#1a2420; --wall:#5d7383; --grid:#22302a;
+  --accent:#ffad2a; --fer-hot:#ff5b38; --hub:#9a90ff; --pc:#9fb0ba;
+  --c1:#ff6a5c; --c2:#5d9bff; --c3:#3fd17f; --ok:#3fd17f; --warn:#ffad2a; --bad:#ff6a5c;
+  color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:14px;line-height:1.45}
+.wrap{max-width:1280px;margin:0 auto;padding-inline:16px;padding-block:18px 28px;display:grid;gap:14px}
+header{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:12px}
+h1{font-family:var(--f-disp);font-weight:700;font-size:clamp(20px,2.6vw,28px);margin:0;letter-spacing:.01em;text-wrap:balance}
+.sub{color:var(--muted);margin:2px 0 0;max-width:70ch}
+.fases{display:flex;flex-wrap:wrap;gap:4px;list-style:none;margin:0;padding:0;font-family:var(--f-mono);font-size:12px}
+.fases li{padding:4px 9px;border:1px solid var(--line);border-radius:3px;color:var(--muted);background:var(--panel)}
+.fases li.on{border-color:var(--accent);color:var(--ink);box-shadow:inset 0 -2px 0 var(--accent)}
+.fases li.done{color:var(--ink)}
+.ctrl{display:flex;flex-wrap:wrap;gap:10px 16px;align-items:center;background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:10px 12px}
+.ctrl .g{display:flex;align-items:center;gap:6px}
+.ctrl label{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+.ctrl label.gr{text-transform:none;font-size:15px;color:var(--ink);font-family:var(--f-mono)}
+.ctrl output{font-family:var(--f-mono);font-size:12px;min-width:3.2ch;display:inline-block}
+input[type=range]{width:88px;accent-color:var(--accent)}
+select,button{font:inherit;font-size:13px;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:4px;padding:5px 10px}
+button{cursor:pointer;font-weight:600}
+button.pri{background:var(--accent);border-color:var(--accent);color:#1b1200}
+button:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.main{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(0,1fr);gap:14px}
+@media (max-width:920px){.main{grid-template-columns:minmax(0,1fr)}}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:12px;min-width:0;display:grid;gap:10px;align-content:start}
+.ph{display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap}
+.ph h2{font-family:var(--f-disp);font-size:15px;font-weight:600;margin:0;text-transform:uppercase;letter-spacing:.07em}
+.ph small{color:var(--muted);font-size:12px}
+.tabs{display:flex;gap:4px;flex-wrap:wrap}
+.tabs button{font-size:12px;padding:3px 9px;font-weight:500}
+.tabs button[aria-pressed=true]{border-color:var(--ink);background:var(--ink);color:var(--panel)}
+canvas{display:block;width:100%;max-width:100%}
+#cvMapa{aspect-ratio:1/1;max-height:640px;margin:0 auto}
+.nodos{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.nodo{border:1px solid var(--line);border-radius:5px;padding:8px;display:grid;gap:3px;font-size:12px;min-width:0}
+.nodo b{font-family:var(--f-disp);font-size:14px;display:flex;align-items:center;gap:6px}
+.led{width:9px;height:9px;border-radius:50%;background:var(--line);display:inline-block}
+.pill{font-family:var(--f-mono);font-size:11px;padding:1px 6px;border-radius:10px;border:1px solid var(--line);justify-self:start}
+.kv{display:flex;justify-content:space-between;font-family:var(--f-mono);font-variant-numeric:tabular-nums;color:var(--muted)}
+.kv span:last-child{color:var(--ink)}
+.met{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
+@media (max-width:560px){.met{grid-template-columns:repeat(2,minmax(0,1fr))}.nodos{grid-template-columns:minmax(0,1fr)}}
+.met div{border-left:2px solid var(--line);padding:2px 8px}
+.met dt{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
+.met dd{margin:0;font-family:var(--f-mono);font-size:18px;font-variant-numeric:tabular-nums}
+.log{font-family:var(--f-mono);font-size:12px;background:var(--bg);border:1px solid var(--line);border-radius:4px;padding:8px;height:170px;overflow:auto;white-space:pre-wrap;margin:0}
+.log .h{color:var(--hub)} .log .c1{color:var(--c1)} .log .c2{color:var(--c2)} .log .c3{color:var(--c3)} .log .g{color:var(--pc)}
+.ley{display:flex;flex-wrap:wrap;gap:12px;font-size:12px;color:var(--muted)}
+.ley i{display:inline-block;width:18px;height:8px;border-radius:2px;vertical-align:middle;margin-right:5px}
+.bottom{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:14px}
+@media (max-width:920px){.bottom{grid-template-columns:minmax(0,1fr)}}
+.nota{font-size:12px;color:var(--muted);margin:0}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+
+<div class="wrap">
+  <header>
+    <div>
+      <h1>Enjambre de 3 carritos · ACO en ESP32 + gemelo digital</h1>
+      <p class="sub">Simulación del sistema completo: cada ESP32 corre su propia colonia de hormigas, publica sus feromonas al ESP32 en modo AP y este las difunde a los otros carritos y al gemelo. Al converger, los 3 recorren la ruta óptima.</p>
+    </div>
+    <ol class="fases" id="fases">
+      <li data-f="ESPERA">ESPERA</li><li data-f="EXPLORA">EXPLORA</li><li data-f="EJECUTA">EJECUTA</li><li data-f="META">META</li>
+    </ol>
+  </header>
+
+  <div class="ctrl" role="group" aria-label="Controles de la simulación">
+    <button class="pri" id="btnPlay">Pausar</button>
+    <button id="btnReset">Reiniciar</button>
+    <div class="g"><label for="selMapa">Mapa</label>
+      <select id="selMapa"><option value="guia">Laberinto del proyecto (9×9)</option><option value="almacen">Almacén aleatorio (13×13)</option></select>
+      <button id="btnNuevo" title="Generar otro almacén aleatorio">Otro</button></div>
+    <div class="g"><label for="selVel">Velocidad</label>
+      <select id="selVel"><option value="0.5">0.5×</option><option value="1" selected>1×</option><option value="2">2×</option><option value="4">4×</option></select></div>
+    <div class="g"><label class="gr" for="rAlfa">α</label><input type="range" id="rAlfa" min="0" max="3" step="0.25" value="1"><output id="oAlfa">1</output></div>
+    <div class="g"><label class="gr" for="rBeta">β</label><input type="range" id="rBeta" min="0" max="4" step="0.25" value="2"><output id="oBeta">2</output></div>
+    <div class="g"><label class="gr" for="rRho">ρ</label><input type="range" id="rRho" min="0.02" max="0.5" step="0.01" value="0.15"><output id="oRho">0.15</output></div>
+    <div class="g"><label for="rAnts">Hormigas/ESP32</label><input type="range" id="rAnts" min="1" max="15" step="1" value="6"><output id="oAnts">6</output></div>
+    <div class="g"><label for="rLoss">Pérdida UDP</label><input type="range" id="rLoss" min="0" max="50" step="5" value="5"><output id="oLoss">5%</output></div>
+  </div>
+
+  <div class="main">
+    <section class="panel" aria-labelledby="hVirt">
+      <div class="ph"><h2 id="hVirt">Parte virtual · gemelo PyBullet (vista superior)</h2>
+        <div class="tabs" role="group" aria-label="Feromona mostrada">
+          <button aria-pressed="true" data-v="G">Gemelo (fusionada)</button>
+          <button aria-pressed="false" data-v="1">Tabla local C1</button>
+          <button aria-pressed="false" data-v="2">C2</button>
+          <button aria-pressed="false" data-v="3">C3</button>
+        </div></div>
+      <canvas id="cvMapa" width="640" height="640" aria-label="Laberinto con feromonas, hormigas y carritos"></canvas>
+      <div class="ley"><span><i style="background:var(--floor);border:1px solid var(--line)"></i>sin feromona</span><span><i style="background:var(--accent)"></i>media</span><span><i style="background:var(--fer-hot)"></i>alta</span><span>● hormiga de la iteración</span><span>▮ carrito físico</span></div>
+    </section>
+
+    <div style="display:grid;gap:14px;min-width:0;align-content:start">
+      <section class="panel" aria-labelledby="hRed">
+        <div class="ph"><h2 id="hRed">Parte de red · ESP32 en modo AP</h2><small>SSID ENJAMBRE_ACO · 192.168.4.1:5005/UDP</small></div>
+        <canvas id="cvRed" width="520" height="250" aria-label="Paquetes UDP entre carritos, hub y gemelo"></canvas>
+        <div class="ley"><span><i style="background:var(--accent)"></i>"fer" feromonas</span><span><i style="background:var(--hub)"></i>"inicio" / "ir"</span><span><i style="background:var(--pc)"></i>"pos" posición</span><span>✕ paquete perdido</span></div>
+      </section>
+      <section class="panel" aria-labelledby="hFis">
+        <div class="ph"><h2 id="hFis">Mundo físico · nodos ESP32</h2><small>estado reportado por latido</small></div>
+        <div class="nodos" id="nodos"></div>
+      </section>
+    </div>
+  </div>
+
+  <div class="bottom">
+    <section class="panel" aria-labelledby="hConv">
+      <div class="ph"><h2 id="hConv">Convergencia</h2><small>longitud promedio de las rutas de las hormigas, por carrito</small></div>
+      <dl class="met">
+        <div><dt>Óptimo (BFS)</dt><dd id="mOpt">–</dd></div>
+        <div><dt>Mejor global</dt><dd id="mBest">–</dd></div>
+        <div><dt>Paquetes</dt><dd id="mPk">0</dd></div>
+        <div><dt>Perdidos</dt><dd id="mLost">0</dd></div>
+      </dl>
+      <canvas id="cvConv" width="560" height="190" aria-label="Gráfica de convergencia"></canvas>
+    </section>
+    <section class="panel" aria-labelledby="hLog">
+      <div class="ph"><h2 id="hLog">Monitor serie</h2><small>salida combinada de las 4 ESP32 y el gemelo</small></div>
+      <pre class="log" id="log" aria-live="off"></pre>
+      <p class="nota">La lógica es la misma de <code>aco.py</code>, <code>hub.py</code> y <code>carrito.py</code>: hormigas con retroceso, evaporación ρ, depósito Q/L, refuerzo elitista y límites τ∈[0.05, 10].</p>
+    </section>
+  </div>
+</div>
+
+<script>
+(()=>{
+"use strict";
+// ---------------------------------------------------------------- mapas
+const GUIA=["###########","#A....#...#","#.##.##.#.#","#.#.....#.#","#.#.###.#.#","#...#...#.#","###.#.###.#","#...#.....#","#.###.###.#","#.....#..M#","###########"];
+function rng(seed){let a=seed>>>0;return()=>{a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
+function almacen(seed){const R=rng(seed),n=6,W=2*n+1,g=[...Array(W)].map(()=>Array(W).fill("#"));
+  const st=[[0,0]],vis=new Set(["0,0"]);g[1][1]=".";
+  while(st.length){const[r,c]=st[st.length-1];const nb=[[0,1],[1,0],[0,-1],[-1,0]].map(([a,b])=>[r+a,c+b,a,b]).filter(([x,y])=>x>=0&&y>=0&&x<n&&y<n&&!vis.has(x+","+y));
+    if(!nb.length){st.pop();continue}const[r2,c2,a,b]=nb[Math.floor(R()*nb.length)];g[2*r+1+a][2*c+1+b]=".";g[2*r2+1][2*c2+1]=".";vis.add(r2+","+c2);st.push([r2,c2])}
+  let k=0;while(k<14){const r=1+Math.floor(R()*(W-2)),c=1+Math.floor(R()*(W-2));if(g[r][c]==="#"&&((r%2&&!(c%2))||(!(r%2)&&c%2))){g[r][c]=".";k++}}
+  g[1][1]="A";g[W-2][W-2]="M";return g.map(r=>r.join(""))}
+function crearMapa(M){const F=M.length,C=M[0].length,N=F*C,D=[[-1,0],[0,1],[1,0],[0,-1]];
+  const libre=(f,c)=>f>=0&&c>=0&&f<F&&c<C&&M[f][c]!=="#";let A=0,Mt=0;
+  for(let f=0;f<F;f++)for(let c=0;c<C;c++){if(M[f][c]==="A")A=f*C+c;if(M[f][c]==="M")Mt=f*C+c}
+  const V=[];for(let i=0;i<N;i++){const f=i/C|0,c=i%C,v=[];if(libre(f,c))for(let d=0;d<4;d++)if(libre(f+D[d][0],c+D[d][1]))v.push([d,(f+D[d][0])*C+c+D[d][1]]);V.push(v)}
+  const fm=Mt/C|0,cm=Mt%C,ETA=[];for(let i=0;i<N;i++)ETA.push(1/(Math.abs((i/C|0)-fm)+Math.abs(i%C-cm)+1));
+  const ar=(i,d)=>d===0?(i-C)*4+2:d===3?(i-1)*4+1:i*4+d;const AR=[];
+  for(let i=0;i<N;i++)for(const[d]of V[i])if(d===1||d===2)AR.push(i*4+d);
+  const dist=new Map([[A,0]]),q=[A];while(q.length){const i=q.shift();for(const[,j]of V[i])if(!dist.has(j)){dist.set(j,dist.get(i)+1);q.push(j)}}
+  return{M,F,C,N,A,Mt,V,ETA,ar,AR,opt:dist.get(Mt)}}
+
+// ----------------------------------------------------------------- ACO (espejo de aco.py)
+class Colonia{
+  constructor(mp,p,seed){Object.assign(this,p);this.mp=mp;this.r=rng(seed);this.tau=new Float64Array(mp.N*4);
+    for(const e of mp.AR)this.tau[e]=1;this.etab=mp.ETA.map(e=>e**p.beta);this.best=null;this.bestL=1e9;this.it=0}
+  construir(){const{V,A,Mt,N,ar}=this.mp,vis=new Uint8Array(N),pila=[A];vis[A]=1;
+    while(pila[pila.length-1]!==Mt){const i=pila[pila.length-1];let tot=0;const c=[];
+      for(const[d,j]of V[i])if(!vis[j]){const w=this.tau[ar(i,d)]**this.alfa*this.etab[j];c.push([j,w]);tot+=w}
+      if(!c.length){pila.pop();if(!pila.length)return null;continue}
+      let r=this.r()*tot,el=c[c.length-1][0];for(const[j,w]of c){r-=w;if(r<=0){el=j;break}}vis[el]=1;pila.push(el)}
+    return pila}
+  depositar(dep,ruta,q){const{V,ar}=this.mp;for(let k=0;k<ruta.length-1;k++){const i=ruta[k],j=ruta[k+1];for(const[d,v]of V[i])if(v===j){const e=ar(i,d);dep.set(e,(dep.get(e)||0)+q);break}}}
+  aplicar(dep,peso=1){for(const[e,d]of dep){const v=this.tau[e]+d*peso;this.tau[e]=v<10?v:10}}
+  iterar(){this.it++;const dep=new Map();let mi=null,suma=0,nn=0;
+    for(let k=0;k<this.n;k++){const r=this.construir();if(!r)continue;suma+=r.length-1;nn++;this.depositar(dep,r,this.q/(r.length-1));if(!mi||r.length<mi.length)mi=r}
+    if(mi&&mi.length-1<this.bestL){this.bestL=mi.length-1;this.best=mi}
+    if(this.best)this.depositar(dep,this.best,this.elit*this.q/this.bestL);
+    const f=1-this.rho;for(const e of this.mp.AR){const v=this.tau[e]*f;this.tau[e]=v>0.05?v:0.05}
+    this.aplicar(dep);this.prom=nn?suma/nn:0;return[dep,mi]}
+  considerar(r){if(r&&r.length-1<this.bestL){this.bestL=r.length-1;this.best=r.slice();return true}return false}
+}
+
+// ---------------------------------------------------------------- estado
+const $=id=>document.getElementById(id);
+const cvM=$("cvMapa"),cvR=$("cvRed"),cvC=$("cvConv"),ctxM=cvM.getContext("2d"),ctxR=cvR.getContext("2d"),ctxC=cvC.getContext("2d");
+let S,col={},vista="G",corriendo=true,vel=1,semillaAlm=7;
+const T_IT=320,T_CELDA=900,T_GIRO=420,RETARDO=3000,LAT=[160,320];
+const YAW=[-Math.PI/2,0,Math.PI/2,Math.PI];   // N E S O en coordenadas de pantalla
+
+function leerColores(){const cs=getComputedStyle(document.documentElement);for(const k of["bg","panel","ink","muted","line","floor","wall","grid","accent","fer-hot","hub","pc","c1","c2","c3","ok","warn","bad"])col[k]=cs.getPropertyValue("--"+k).trim()}
+function hex(c){c=c.replace("#","");return[0,2,4].map(i=>parseInt(c.substr(i,2),16))}
+function mezcla(a,b,t){const A=hex(a),B=hex(b);return`rgb(${A.map((v,i)=>Math.round(v+(B[i]-v)*t)).join(",")})`}
+
+function params(){return{alfa:+$("rAlfa").value,beta:+$("rBeta").value,rho:+$("rRho").value,n:+$("rAnts").value,q:1,elit:2}}
+function reiniciar(){
+  const mp=crearMapa($("selMapa").value==="guia"?GUIA:almacen(semillaAlm));const p=params();
+  S={mp,p,t:0,ev:[],fase:"ESPERA",pk:0,lost:0,log:[],paquetes:[],best:null,bestL:1e9,
+     gem:new Float64Array(mp.N*4),hub:{reg:new Set(),gem:false},hist:{1:[],2:[],3:[]},
+     carros:[1,2,3].map(id=>({id,est:"OFF",col:new Colonia(mp,p,id*7919+(semillaAlm*13)),sinMej:0,
+       x:0,y:0,yaw:0,segs:[],seg:null,ant:null,antT:0,rec:0,ruta:null}))};
+  for(const e of mp.AR)S.gem[e]=1;
+  S.carros.forEach((c,k)=>{const[x,y]=xy(mp.A);c.x=x-0.22;c.y=y+(k-1)*0.27;c.yaw=0});
+  $("log").textContent="";$("mOpt").textContent=mp.opt;
+  log("g","[GEMELO] PyBullet listo, enviando 'hola' a 192.168.4.1:5005");
+  log("h","[HUB] AP activo: ENJAMBRE_ACO  ip=192.168.4.1");
+  S.carros.forEach((c,k)=>prog(300+k*450+Math.random()*200,()=>{c.est="ESPERA";log("c"+c.id,`[C${c.id}] conectado a ENJAMBRE_ACO  ip=192.168.4.${2+k}`);
+    const hb=()=>{if(S.hub.reg.has(c.id))return;enviar(c.id,"H",{t:"hb"},"hub",()=>{if(!S.hub.reg.has(c.id)){S.hub.reg.add(c.id);log("h",`[HUB] carrito ${c.id} registrado`)}});prog(1000,hb)};hb()}));
+  prog(200,()=>enviar("G","H",{t:"hola"},"pc",()=>{S.hub.gem=true;log("h","[HUB] gemelo digital registrado")}));
+  pintarNodos();
+}
+function prog(dt,fn){S.ev.push({t:S.t+dt,fn})}
+function log(cls,txt){const s=(S.t/1000).toFixed(2).padStart(6," ");S.log.push([cls,`${s}s ${txt}`]);if(S.log.length>200)S.log.shift();S.logSucio=true}
+function xy(i){const C=S.mp.C;return[i%C+0.5,(i/C|0)+0.5]}
+
+// ---------------------------------------------------------------- red
+// nodos: 1,2,3 carritos | H hub | G gemelo
+function posNodo(n){const W=cvR.width,H=cvR.height;if(n==="H")return[W*0.52,H*0.5];if(n==="G")return[W*0.88,H*0.5];return[W*0.12,H*(0.18+(n-1)*0.32)]}
+function enviar(de,a,msg,tipo,alLlegar){S.pk++;const perdido=de!=="H"&&a!=="H"?false:Math.random()*100<+$("rLoss").value&&msg.t!=="hola";
+  const dur=LAT[0]+Math.random()*(LAT[1]-LAT[0]);S.paquetes.push({de,a,t0:S.t,dur,tipo,perdido});
+  if(perdido){S.lost++;return}prog(dur,alLlegar)}
+function hubRecibe(m,de){
+  if(m.t==="fer"){if(m.L<S.bestL){S.bestL=m.L;S.best=m.ruta;log("h",`[HUB] nueva mejor ruta global L=${m.L}`)}
+    for(const c of S.carros)if(c.id!==de)enviar("H",c.id,m,"fer",()=>carroRecibe(c,m));
+    if(S.hub.gem)enviar("H","G",m,"fer",()=>gemeloRecibe(m))}
+  else if(m.t==="listo"){const c=S.carros[de-1];c.hubEst="LISTO";log("h",`[HUB] carrito ${de} LISTO (L=${m.L})`);if(m.L<S.bestL){S.bestL=m.L;S.best=m.ruta}}
+  else if(m.t==="pos"&&S.hub.gem)enviar("H","G",m,"pos",()=>{})}
+function carroRecibe(c,m){
+  if(m.t==="inicio"&&c.est==="ESPERA"){c.est="EXPLORA";log("c"+c.id,`[C${c.id}] inicio de exploración ACO`);prog(T_IT*(0.6+Math.random()*0.5),()=>iterar(c))}
+  else if(m.t==="fer"&&(c.est==="EXPLORA"||c.est==="LISTO")){c.col.aplicar(m.dep);if(c.col.considerar(m.ruta))c.sinMej=0;c.rec++}
+  else if(m.t==="ir"&&(c.est==="LISTO"||c.est==="EXPLORA"))ejecutar(c,m)}
+function gemeloRecibe(m){const f=(1-S.p.rho)**(1/3);for(const e of S.mp.AR)S.gem[e]=Math.max(0.05,S.gem[e]*f);
+  for(const[e,d]of m.dep)S.gem[e]=Math.min(10,S.gem[e]+d)}
+
+// ---------------------------------------------------------------- carrito
+function iterar(c){if(c.est!=="EXPLORA")return;const antes=c.col.bestL;const[dep,mi]=c.col.iterar();
+  c.sinMej=c.col.bestL<antes?0:c.sinMej+1;S.hist[c.id].push(c.col.prom);
+  if(mi&&!c.ant){c.ant=mi;c.antT=S.t}
+  const m={t:"fer",dep:[...dep],ruta:mi,L:c.col.bestL};enviar(c.id,"H",m,"fer",()=>hubRecibe(m,c.id));
+  const it=c.col.it;if((it>=15&&c.sinMej>=12)||it>=80){c.est="LISTO";
+    log("c"+c.id,`[C${c.id}] LISTO en it=${it}  L=${c.col.bestL}  (paquetes recibidos=${c.rec})`);
+    const l={t:"listo",ruta:c.col.best,L:c.col.bestL};
+    const rep=()=>{if(c.est!=="LISTO"||c.hubEst==="LISTO")return;enviar(c.id,"H",l,"hub",()=>{if(c.hubEst!=="LISTO")hubRecibe(l,c.id)});prog(1000,rep)};rep();return}
+  prog(T_IT*(0.9+Math.random()*0.2),()=>iterar(c))}
+function ejecutar(c,m){const k=m.orden.indexOf(c.id);c.est="EJECUTA";c.ruta=m.ruta;c.ant=null;
+  const parada=m.ruta.length-1-k;log("c"+c.id,`[C${c.id}] ejecutando ruta L=${m.L} (sale en ${k*RETARDO} ms)`);
+  let t=k*RETARDO,yaw=0,[px,py]=xy(m.ruta[0]);c.segs.push({t0:S.t+t,dur:400,x:px,y:py,yaw:0});t+=400;
+  let rumbo=1;for(let s=0;s<parada;s++){const i=m.ruta[s],j=m.ruta[s+1];let d=S.mp.V[i].find(v=>v[1]===j)[0];
+    const g=(d-rumbo+4)%4;if(g){const q=g===2?2:1;c.segs.push({t0:S.t+t,dur:T_GIRO*q,x:px,y:py,yaw:YAW[d],giro:true,i});t+=T_GIRO*q;rumbo=d}
+    [px,py]=xy(j);c.segs.push({t0:S.t+t,dur:T_CELDA,x:px,y:py,yaw:YAW[d],i,j});t+=T_CELDA}
+  prog(t+50,()=>{c.est="META";log("c"+c.id,`[C${c.id}] llegó a su posición final`);
+    if(S.carros.every(x=>x.est==="META")){S.fase="META";log("g","[GEMELO] los 3 carritos llegaron a la meta")}})}
+
+// ---------------------------------------------------------------- hub tick (1 s)
+function hubTick(){
+  if(S.fase==="ESPERA"&&S.hub.reg.size===3){S.fase="EXPLORA";log("h","[HUB] fase ESPERA -> EXPLORA")}
+  if(S.fase==="EXPLORA"){for(const c of S.carros)if(c.est==="ESPERA")enviar("H",c.id,{t:"inicio"},"hub",()=>carroRecibe(c,{t:"inicio"}));
+    if(S.carros.every(c=>c.hubEst==="LISTO")&&S.best){S.fase="EJECUTA";log("h",`[HUB] fase EXPLORA -> EJECUTA  (ruta L=${S.bestL})`);
+      const m={t:"ir",ruta:S.best,L:S.bestL,orden:[1,2,3]};for(const c of S.carros)enviar("H",c.id,m,"hub",()=>carroRecibe(c,m))}}
+  if(S.fase==="EJECUTA"){for(const c of S.carros)if(c.est==="LISTO"){const m={t:"ir",ruta:S.best,L:S.bestL,orden:[1,2,3]};enviar("H",c.id,m,"hub",()=>carroRecibe(c,m))}}
+  prog(1000,hubTick)}
+
+// ---------------------------------------------------------------- avance
+function avanzar(dt){S.t+=dt;S.ev.sort((a,b)=>a.t-b.t);while(S.ev.length&&S.ev[0].t<=S.t){const e=S.ev.shift();e.fn()}
+  S.paquetes=S.paquetes.filter(p=>S.t-p.t0<p.dur+(p.perdido?250:0));
+  for(const c of S.carros){
+    while(c.segs.length&&S.t>=c.segs[0].t0){const s=c.segs.shift();c.seg={...s,x0:c.x,y0:c.y,yaw0:c.yaw};
+      if(s.j!==undefined||s.giro){const m={t:"pos"};enviar(c.id,"H",m,"pos",()=>hubRecibe(m,c.id))}}
+    if(c.seg){const s=c.seg,a=Math.min(1,(S.t-s.t0)/s.dur),e=a*a*(3-2*a);let dy=s.yaw-s.yaw0;dy=Math.atan2(Math.sin(dy),Math.cos(dy));
+      c.x=s.x0+(s.x-s.x0)*e;c.y=s.y0+(s.y-s.y0)*e;c.yaw=s.yaw0+dy*e;if(a>=1)c.seg=null}
+    if(c.ant&&(S.t-c.antT)/1000*22>=c.ant.length-1)c.ant=null}}
+
+// ---------------------------------------------------------------- dibujo
+function dpr(cv,h){const r=cv.getBoundingClientRect(),d=window.devicePixelRatio||1,w=Math.max(200,r.width);
+  const H=h?h:w;if(cv.width!==Math.round(w*d)||cv.height!==Math.round(H*d)){cv.width=Math.round(w*d);cv.height=Math.round(H*d);if(h)cv.style.height=h+"px"}return d}
+function dibujarMapa(){const d=dpr(cvM),ctx=ctxM,{M,F,C,AR,A,Mt}=S.mp,W=cvM.width,s=W/Math.max(F,C);
+  ctx.setTransform(1,0,0,1,0,0);ctx.fillStyle=col.floor;ctx.fillRect(0,0,W,W);
+  ctx.strokeStyle=col.grid;ctx.lineWidth=1;for(let i=0;i<=C;i++){ctx.beginPath();ctx.moveTo(i*s,0);ctx.lineTo(i*s,F*s);ctx.stroke()}for(let i=0;i<=F;i++){ctx.beginPath();ctx.moveTo(0,i*s);ctx.lineTo(C*s,i*s);ctx.stroke()}
+  const tau=vista==="G"?S.gem:S.carros[+vista-1].col.tau;let tmax=0.0001;for(const e of AR)tmax=Math.max(tmax,tau[e]);
+  for(const e of AR){const i=e>>2,dd=e&3,j=dd===1?i+1:i+C,n=Math.min(1,tau[e]/tmax);const[xa,ya]=xy(i),[xb,yb]=xy(j);
+    ctx.strokeStyle=n<0.5?mezcla(col.floor,col.accent,n*2):mezcla(col.accent,col["fer-hot"],(n-0.5)*2);ctx.lineWidth=s*(0.12+0.3*n);ctx.lineCap="round";
+    ctx.beginPath();ctx.moveTo(xa*s,ya*s);ctx.lineTo(xb*s,yb*s);ctx.stroke()}
+  ctx.fillStyle=col.wall;for(let f=0;f<F;f++)for(let c=0;c<C;c++)if(M[f][c]==="#")ctx.fillRect(c*s+0.5,f*s+0.5,s-1,s-1);
+  // inicio y meta (bandera a cuadros)
+  let[x,y]=xy(A);ctx.strokeStyle=col.ok;ctx.lineWidth=Math.max(2,s*0.07);ctx.strokeRect((x-0.42)*s,(y-0.42)*s,0.84*s,0.84*s);
+  ctx.fillStyle=col.ok;ctx.font=`600 ${Math.round(s*0.3)}px ${getComputedStyle(document.body).fontFamily}`;ctx.textAlign="center";ctx.textBaseline="middle";
+  [x,y]=xy(Mt);const q=0.84*s/4;for(let a=0;a<4;a++)for(let b=0;b<4;b++){ctx.fillStyle=(a+b)%2?col.panel:col.ink;ctx.fillRect((x-0.42)*s+a*q,(y-0.42)*s+b*q,q,q)}
+  // mejor ruta global durante ejecución
+  if(S.best&&(S.fase==="EJECUTA"||S.fase==="META")){ctx.setLineDash([s*0.12,s*0.12]);ctx.strokeStyle=col.ink;ctx.lineWidth=Math.max(1.5,s*0.04);ctx.beginPath();
+    S.best.forEach((i,k)=>{const[a,b]=xy(i);k?ctx.lineTo(a*s,b*s):ctx.moveTo(a*s,b*s)});ctx.stroke();ctx.setLineDash([])}
+  // hormigas
+  for(const c of S.carros)if(c.ant){const k=(S.t-c.antT)/1000*22,i=Math.min(c.ant.length-2,k|0),f=Math.min(1,k-i),[xa,ya]=xy(c.ant[i]),[xb,yb]=xy(c.ant[i+1]);
+    ctx.fillStyle=col["c"+c.id];for(let t=0;t<4;t++){const kk=Math.max(0,k-t*0.35),ii=Math.min(c.ant.length-2,kk|0),ff=Math.min(1,kk-ii),[a1,b1]=xy(c.ant[ii]),[a2,b2]=xy(c.ant[ii+1]);
+      ctx.globalAlpha=1-t*0.22;ctx.beginPath();ctx.arc((a1+(a2-a1)*ff)*s,(b1+(b2-b1)*ff)*s,s*(0.13-t*0.02),0,7);ctx.fill()}ctx.globalAlpha=1}
+  // carritos
+  for(const c of S.carros){if(c.est==="OFF")continue;ctx.save();ctx.translate(c.x*s,c.y*s);ctx.rotate(c.yaw);
+    const L=s*0.62,A2=s*0.42;ctx.fillStyle=col.ink;for(const[a,b]of[[-.3,-.5],[.3,-.5],[-.3,.5],[.3,.5]])ctx.fillRect(a*L-L*0.12,b*A2-s*0.05,L*0.24,s*0.1);
+    ctx.fillStyle=col["c"+c.id];ctx.beginPath();ctx.roundRect(-L/2,-A2/2,L,A2,s*0.08);ctx.fill();
+    ctx.fillStyle=col.panel;ctx.fillRect(L*0.22,-A2*0.3,L*0.14,A2*0.6);ctx.rotate(-c.yaw);ctx.fillStyle=col.panel;ctx.font=`700 ${Math.round(s*0.26)}px ${getComputedStyle(document.body).fontFamily}`;ctx.fillText(c.id,0,1);ctx.restore()}
+}
+function dibujarRed(){const d=dpr(cvR,250),ctx=ctxR,W=cvR.width,H=cvR.height;ctx.setTransform(d,0,0,d,0,0);const w=W/d,h=H/d;ctx.clearRect(0,0,w,h);
+  const P=n=>{const[x,y]=posNodo(n);return[x/d,y/d]},nodos=[1,2,3,"H","G"];
+  ctx.strokeStyle=col.line;ctx.lineWidth=1.5;for(const n of[1,2,3,"G"]){const[a,b]=P(n),[c,e]=P("H");ctx.beginPath();ctx.moveTo(a,b);ctx.lineTo(c,e);ctx.stroke()}
+  // ondas wifi del AP
+  const[hx,hy]=P("H");ctx.strokeStyle=col.hub;for(let k=1;k<=3;k++){ctx.globalAlpha=0.5-0.12*k;ctx.lineWidth=2;ctx.beginPath();ctx.arc(hx,hy,18+k*9+(S.t/90%9),-2.4,-0.74);ctx.stroke();ctx.beginPath();ctx.arc(hx,hy,18+k*9+(S.t/90%9),0.74,2.4);ctx.stroke()}ctx.globalAlpha=1;
+  for(const p of S.paquetes){const[a,b]=P(p.de),[c,e]=P(p.a);let f=Math.min(1,(S.t-p.t0)/p.dur);if(p.perdido)f=Math.min(f,0.55);
+    const x=a+(c-a)*f,y=b+(e-b)*f;const cc=p.tipo==="fer"?col.accent:p.tipo==="pos"?col.pc:col.hub;
+    if(p.perdido&&f>=0.55){ctx.strokeStyle=col.bad;ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(x-5,y-5);ctx.lineTo(x+5,y+5);ctx.moveTo(x+5,y-5);ctx.lineTo(x-5,y+5);ctx.stroke();continue}
+    ctx.fillStyle=cc;ctx.beginPath();ctx.arc(x,y,p.tipo==="fer"?4:3.5,0,7);ctx.fill()}
+  const fam=getComputedStyle(document.body).fontFamily;
+  for(const n of nodos){const[x,y]=P(n);const isC=typeof n==="number";const cc=isC?col["c"+n]:n==="H"?col.hub:col.pc;
+    ctx.fillStyle=col.panel;ctx.strokeStyle=cc;ctx.lineWidth=2;ctx.beginPath();ctx.roundRect(x-34,y-17,68,34,5);ctx.fill();ctx.stroke();
+    ctx.fillStyle=col.ink;ctx.textAlign="center";ctx.textBaseline="middle";ctx.font=`600 12px ${fam}`;
+    ctx.fillText(isC?`ESP32 C${n}`:n==="H"?"ESP32 AP":"PC Docker",x,y-5);ctx.font=`11px ${fam}`;ctx.fillStyle=col.muted;
+    ctx.fillText(isC?S.carros[n-1].est:n==="H"?S.fase:"PyBullet",x,y+8)}}
+function dibujarConv(){const d=dpr(cvC,190),ctx=ctxC,w=cvC.width/d,h=cvC.height/d;ctx.setTransform(d,0,0,d,0,0);ctx.clearRect(0,0,w,h);
+  const fam=getComputedStyle(document.body).fontFamily,ml=36,mr=10,mt=10,mb=24;const all=[...S.hist[1],...S.hist[2],...S.hist[3]];
+  const maxIt=Math.max(20,...[1,2,3].map(i=>S.hist[i].length)),opt=S.mp.opt;let yMax=Math.max(opt+6,...all);yMax=Math.ceil(yMax/4)*4;const yMin=Math.max(0,opt-4);const pasoY=yMax-yMin>24?4:2;
+  const X=i=>ml+(w-ml-mr)*(i/(maxIt)),Y=v=>mt+(h-mt-mb)*(1-(v-yMin)/(yMax-yMin));
+  ctx.strokeStyle=col.grid;ctx.fillStyle=col.muted;ctx.font=`11px ${fam}`;ctx.lineWidth=1;ctx.textAlign="right";ctx.textBaseline="middle";
+  for(let v=yMin;v<=yMax;v+=pasoY){ctx.beginPath();ctx.moveTo(ml,Y(v));ctx.lineTo(w-mr,Y(v));ctx.stroke();ctx.fillText(v,ml-6,Y(v))}
+  ctx.textAlign="center";ctx.textBaseline="top";const pasoX=maxIt>40?20:5;for(let i=0;i<=maxIt;i+=pasoX)ctx.fillText(i,X(i),h-mb+6);
+  ctx.textAlign="left";ctx.fillText("iteración",X(0)+4,h-mb+6);
+  ctx.setLineDash([4,4]);ctx.strokeStyle=col.ink;ctx.beginPath();ctx.moveTo(ml,Y(opt));ctx.lineTo(w-mr,Y(opt));ctx.stroke();ctx.setLineDash([]);
+  ctx.fillStyle=col.ink;ctx.textAlign="right";ctx.textBaseline="bottom";ctx.fillText("óptimo "+opt,w-mr,Y(opt)-2);
+  [1,2,3].forEach((id,k)=>{const H=S.hist[id];if(!H.length)return;ctx.strokeStyle=col["c"+id];ctx.lineWidth=2;ctx.beginPath();
+    H.forEach((v,i)=>{const yy=Y(Math.min(v,yMax));i?ctx.lineTo(X(i+1),yy):ctx.moveTo(X(i+1),yy)});ctx.stroke();
+    ctx.fillStyle=col["c"+id];ctx.beginPath();ctx.arc(X(H.length),Y(Math.min(H[H.length-1],yMax)),3.5,0,7);ctx.fill()})}
+function pintarNodos(){const el=$("nodos");el.innerHTML=S.carros.map(c=>`<div class="nodo" id="n${c.id}"><b><span class="led" id="led${c.id}"></span>Carrito ${c.id}</b>
+  <span class="pill" id="st${c.id}" style="border-color:var(--c${c.id})">OFF</span>
+  <div class="kv"><span>iteración</span><span id="it${c.id}">0</span></div><div class="kv"><span>mejor L</span><span id="L${c.id}">–</span></div>
+  <div class="kv"><span>fer. recibidas</span><span id="rc${c.id}">0</span></div></div>`).join("")}
+function actualizarUI(){for(const c of S.carros){$("st"+c.id).textContent=c.est;$("it"+c.id).textContent=c.col.it;$("L"+c.id).textContent=c.col.best?c.col.bestL:"–";$("rc"+c.id).textContent=c.rec;
+    const on=c.est==="EXPLORA"?(S.t/120|0)%2:c.est==="OFF"?0:1;$("led"+c.id).style.background=on?`var(--c${c.id})`:"var(--line)"}
+  $("mBest").textContent=S.best?S.bestL:"–";$("mPk").textContent=S.pk;$("mLost").textContent=S.lost;
+  const orden=["ESPERA","EXPLORA","EJECUTA","META"],fi=orden.indexOf(S.fase);document.querySelectorAll("#fases li").forEach((li,i)=>{li.className=i===fi?"on":i<fi?"done":""});
+  if(S.logSucio){const l=$("log");const abajo=l.scrollHeight-l.scrollTop-l.clientHeight<30;l.innerHTML=S.log.map(([c,t])=>`<span class="${c}">${t.replace(/</g,"&lt;")}</span>`).join("\n");if(abajo)l.scrollTop=l.scrollHeight;S.logSucio=false}}
+
+// ---------------------------------------------------------------- bucle
+let tPrev=performance.now();
+function frame(t){const dt=Math.min(100,t-tPrev)*vel;tPrev=t;if(corriendo)avanzar(dt);
+  try{dibujarMapa();dibujarRed();dibujarConv();actualizarUI()}catch(e){console.error(e)}requestAnimationFrame(frame)}
+function arrancar(){reiniciar();prog(1000,hubTick)}
+
+// ---------------------------------------------------------------- controles
+for(const[r,o,suf]of[["rAlfa","oAlfa",""],["rBeta","oBeta",""],["rRho","oRho",""],["rAnts","oAnts",""],["rLoss","oLoss","%"]]){
+  $(r).addEventListener("input",()=>{$(o).textContent=$(r).value+suf});if(r!=="rLoss")$(r).addEventListener("change",arrancar)}
+$("btnPlay").onclick=()=>{corriendo=!corriendo;$("btnPlay").textContent=corriendo?"Pausar":"Continuar"};
+$("btnReset").onclick=arrancar;$("selMapa").onchange=arrancar;$("btnNuevo").onclick=()=>{semillaAlm=(semillaAlm*31+11)%9973;$("selMapa").value="almacen";arrancar()};
+$("selVel").onchange=e=>vel=+e.target.value;
+document.querySelectorAll(".tabs button").forEach(b=>b.onclick=()=>{vista=b.dataset.v;document.querySelectorAll(".tabs button").forEach(x=>x.setAttribute("aria-pressed",x===b))});
+leerColores();matchMedia("(prefers-color-scheme: dark)").addEventListener("change",leerColores);
+new MutationObserver(leerColores).observe(document.documentElement,{attributes:true,attributeFilter:["data-theme"]});
+arrancar();requestAnimationFrame(frame);
+})();
+</script>
+</html>
